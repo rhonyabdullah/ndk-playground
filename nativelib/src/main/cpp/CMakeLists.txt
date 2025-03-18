@@ -44,10 +44,12 @@ target_sources(
         PRIVATE
         ${NATIVE_SRC_DIR}/nativelib.cpp
         ${NATIVE_SRC_DIR}/logging/logging.cpp
+        ${NATIVE_SRC_DIR}/bitmap/bitmap.cpp
 )
 
 target_include_directories(
         ${CMAKE_PROJECT_NAME}
         PRIVATE
         ${NATIVE_SRC_DIR}/logging
+        ${NATIVE_SRC_DIR}/bitmap
 )
