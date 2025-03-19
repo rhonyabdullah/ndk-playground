@@ -4,58 +4,60 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
-import com.ndk.nativelib.LOG_D
-import com.ndk.nativelib.LOG_E
-import com.ndk.nativelib.LOG_I
-import com.ndk.nativelib.LOG_V
-import com.ndk.nativelib.LOG_W
+import androidx.navigation.NavHostController
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import com.ndk.playground.screen.bitmap.BitmapScreen
+import com.ndk.playground.screen.landing.LandingScreen
 import com.ndk.playground.ui.theme.NDKPlaygroundTheme
+import com.ndk.playground.utils.ImageProcessor
+import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
+@AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
-    private val logMessage = "Hello from MainActivity"
+    @Inject
+    lateinit var imageProcessor: ImageProcessor
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
             NDKPlaygroundTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    Greeting(
-                        name = "Android",
-                        modifier = Modifier.padding(innerPadding)
-                    )
-                }
+                MainApp(
+                    navController = rememberNavController(),
+                    imageProcessor = imageProcessor
+                )
             }
         }
-        LOG_V("MainActivity", "Using tag: $logMessage")
-        LOG_V(logMessage)
-        LOG_D(logMessage)
-        LOG_I(logMessage)
-        LOG_W(logMessage)
-        LOG_E(logMessage)
     }
 }
 
 @Composable
-fun Greeting(name: String, modifier: Modifier = Modifier) {
-    Text(
-        text = "Hello $name!",
-        modifier = modifier
-    )
-}
-
-@Preview(showBackground = true)
-@Composable
-fun GreetingPreview() {
-    NDKPlaygroundTheme {
-        Greeting("Android")
+private fun MainApp(
+    navController: NavHostController,
+    imageProcessor: ImageProcessor
+) {
+    NavHost(
+        navController = navController,
+        startDestination = NdkPlaygroundScreen.LANDING.name
+    ) {
+        composable(NdkPlaygroundScreen.LANDING.name) {
+            LandingScreen(
+                onBack = navController::popBackStack,
+                onBitmapClicked = {
+                    navController.navigate(NdkPlaygroundScreen.BITMAP.name)
+                }
+            )
+        }
+        composable(NdkPlaygroundScreen.BITMAP.name) {
+            BitmapScreen(
+                onBack = navController::popBackStack,
+                imageProcessor = imageProcessor
+            )
+        }
     }
 }

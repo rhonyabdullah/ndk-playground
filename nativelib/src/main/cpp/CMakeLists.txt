@@ -35,7 +35,9 @@ add_library(${CMAKE_PROJECT_NAME} SHARED
 target_link_libraries(${CMAKE_PROJECT_NAME}
         # List libraries link to the target library
         android
-        log)
+        log
+        jnigraphics
+)
 
 set(NATIVE_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 
