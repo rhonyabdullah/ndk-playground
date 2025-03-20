@@ -5,21 +5,15 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
-import android.os.Environment
 import android.provider.MediaStore
 import androidx.camera.core.ImageCapture
-import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.takePicture
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
-import androidx.exifinterface.media.ExifInterface
 import com.ndk.nativelib.BitmapUtils
 import com.ndk.nativelib.LOG_D
-import com.ndk.nativelib.LOG_E
 import com.ndk.playground.R
 import dagger.hilt.android.qualifiers.ApplicationContext
-import java.io.File
-import java.io.FileInputStream
-import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -34,69 +28,35 @@ class ImageProcessor @Inject constructor(
 
     suspend fun captureImage(
         imageCapture: ImageCapture
-    ): Pair<Bitmap, File>? = suspendCoroutine { continuation ->
-        val file = File(
-            context.getExternalFilesDir(
-                Environment.DIRECTORY_PICTURES
-            ),
-            "captured-${getFormattedTimestamp()}.jpg"
-        )
-        val outputOptions = ImageCapture.OutputFileOptions.Builder(file).build()
-        imageCapture.takePicture(
-            outputOptions,
-            ContextCompat.getMainExecutor(context),
-            object : ImageCapture.OnImageSavedCallback {
-                override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
-                    this@ImageProcessor.LOG_D("Image successfully captured")
-                    continuation.resume(BitmapFactory.decodeFile(file.absolutePath) to file)
-                }
+    ): Bitmap {
+        val proxy = imageCapture.takePicture()
 
-                override fun onError(exception: ImageCaptureException) {
-                    this@ImageProcessor.LOG_E("Image capture failed: ${exception.message}")
-                    continuation.resume(null)
-                }
+        val bitmapResult = if (proxy.imageInfo.rotationDegrees != 0) {
+            val bitmap = proxy.toBitmap()
+            val matrix = Matrix()
+            matrix.postRotate(proxy.imageInfo.rotationDegrees.toFloat())
+            LOG_D("bitmap rotated: ${proxy.imageInfo.rotationDegrees} degrees")
+            Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+        } else proxy.toBitmap()
 
-            })
+        LOG_D("bitmap result: ${bitmapResult.byteCount}")
+
+        proxy.close()
+        return bitmapResult
     }
 
-    suspend fun processImage(
-        originalBitmap: Bitmap,
-        originalFile: File,
+    suspend fun compressBitmap(
+        bitmap: Bitmap,
         compressQuality: Int
-    ): Bitmap? = suspendCoroutine { continuation ->
-        val rotatedBitmap = rotateBitmapIfRequired(originalFile, originalBitmap)
-        saveBitmapToGallery(rotatedBitmap, originalFile.name)
-
-        LOG_D("Original Image (Fixed) Saved: ${originalFile.absolutePath} | Size: ${originalFile.length()} bytes")
-
+    ): Bitmap = suspendCoroutine { continuation ->
         val compressedBytes = bitmapUtils.compressBitmap(
-            rotatedBitmap,
+            bitmap,
             Bitmap.CompressFormat.JPEG.ordinal,
             compressQuality
+        )!!
+        continuation.resume(
+            BitmapFactory.decodeByteArray(compressedBytes, 0, compressedBytes.size)
         )
-
-        if (compressedBytes != null) {
-            val compressedFile = File(
-                context.getExternalFilesDir(Environment.DIRECTORY_PICTURES),
-                "compressed-${getFormattedTimestamp()}.jpg"
-            )
-            FileOutputStream(compressedFile).use { it.write(compressedBytes) }
-
-            LOG_D("Compressed Image Saved: ${compressedFile.absolutePath} | Size: ${compressedFile.length()} bytes")
-
-            val originalSize = originalFile.length()
-            val compressedSize = compressedFile.length()
-            val reduction = ((originalSize - compressedSize) / originalSize.toFloat()) * 100
-
-            LOG_D("Compression Reduction: $reduction% (from $originalSize bytes to $compressedSize bytes)")
-
-            val newBitmap = BitmapFactory.decodeFile(compressedFile.absolutePath)
-            saveBitmapToGallery(newBitmap, compressedFile.name)
-            continuation.resume(newBitmap)
-        } else {
-            LOG_D("Compression failed!")
-            continuation.resume(null)
-        }
     }
 
     @Suppress("BlockingMethodInNonBlockingContext")
@@ -109,30 +69,9 @@ class ImageProcessor @Inject constructor(
             }
         }
 
-    private fun rotateBitmapIfRequired(file: File, bitmap: Bitmap): Bitmap {
-        val exif = ExifInterface(FileInputStream(file))
-        val orientation =
-            exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
-
-        val rotationAngle = when (orientation) {
-            ExifInterface.ORIENTATION_ROTATE_90 -> 90f
-            ExifInterface.ORIENTATION_ROTATE_180 -> 180f
-            ExifInterface.ORIENTATION_ROTATE_270 -> 270f
-            else -> 0f
-        }
-
-        return if (rotationAngle != 0f) {
-            val matrix = Matrix()
-            matrix.postRotate(rotationAngle)
-            Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
-        } else {
-            bitmap
-        }
-    }
-
-    private fun saveBitmapToGallery(bitmap: Bitmap, name: String) {
+    fun saveBitmapToGallery(bitmap: Bitmap, name: String) {
         val contentValues = ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, name)
+            put(MediaStore.MediaColumns.DISPLAY_NAME, "$name-${getFormattedTimestamp()}")
             put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
             put(
                 MediaStore.Images.Media.RELATIVE_PATH,
